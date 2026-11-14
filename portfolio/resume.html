@@ -2,92 +2,72 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Sudeep Nayak — Resume</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>Sudeep Nayak - Resume</title>
+<meta name="author" content="Sudeep Nayak">
+<!-- ATS-friendly: one column, standard fonts (no web fonts), real text,
+     standard section headings, no tables/columns/icons, reading order = visual order. -->
 <style>
-  @page { size: A4; margin: 13mm 15mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 9.6pt/1.42 Inter, Arial, sans-serif; color: #16181d; }
-  a { color: inherit; text-decoration: none; }
-  header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #2f5bea; padding-bottom: 7px; margin-bottom: 9px; }
-  h1 { font-size: 21pt; margin: 0; letter-spacing: -0.02em; line-height: 1.1; }
-  .role { color: #2f5bea; font-weight: 600; font-size: 10.5pt; margin-top: 2px; }
-  .contact { text-align: right; font-size: 8.8pt; color: #3b4150; line-height: 1.5; }
-  h2 { font-size: 9.5pt; text-transform: uppercase; letter-spacing: .09em; color: #2f5bea; margin: 11px 0 5px; padding-bottom: 2px; border-bottom: 1px solid #dfe3ec; }
-  p { margin: 0 0 4px; }
-  .row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-  .item { margin-bottom: 8px; }
-  .item h3 { font-size: 10.3pt; margin: 0; }
-  .item h3 span { font-weight: 400; color: #4b5260; font-size: 9pt; }
-  .meta { font-size: 8.8pt; color: #4b5260; white-space: nowrap; }
-  ul { margin: 3px 0 0; padding-left: 15px; }
-  li { margin-bottom: 2px; }
-  .stack { font-size: 8.8pt; color: #4b5260; margin-top: 2px; }
-  .stack b { color: #16181d; font-weight: 600; }
-  .skills { display: grid; grid-template-columns: 105px 1fr; gap: 3px 10px; }
-  .skills b { font-weight: 600; }
+  @page { size: A4; margin: 11mm 14mm; }
+  body { margin: 0; font: 9.6pt/1.3 Arial, "Liberation Sans", Helvetica, sans-serif; color: #000; }
+  a { color: #000; text-decoration: none; }
+  h1 { font-size: 20pt; margin: 0 0 2px; }
+  .headline { font-size: 10.5pt; font-weight: bold; color: #1f3a93; margin: 0 0 3px; }
+  .contact { font-size: 9.5pt; margin: 0; }
+  h2 { font-size: 10.5pt; font-weight: bold; color: #1f3a93; margin: 8px 0 3px; padding-bottom: 1px; border-bottom: 1px solid #1f3a93; }
+  h3 { font-size: 9.9pt; font-weight: bold; margin: 5px 0 0; }
+  p { margin: 0 0 3px; }
+  .sub { font-size: 9pt; margin: 0 0 1px; }
+  ul { margin: 2px 0 0; padding-left: 16px; }
+  li { margin-bottom: 1px; }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>Sudeep Nayak</h1>
-    <div class="role">ML &amp; MLOps Engineer · AI/ML Engineering Student</div>
-  </div>
-  <div class="contact">
-    <a href="mailto:sudeepnayak1104@gmail.com">sudeepnayak1104@gmail.com</a> · Karnataka, India<br>
-    <a href="https://sudeepn1104.github.io">sudeepn1104.github.io</a> · <a href="https://github.com/Sudeepn1104">github.com/Sudeepn1104</a><br>
-    <a href="https://www.linkedin.com/in/sudeep-u-nayak-b69313374/">linkedin.com/in/sudeep-u-nayak-b69313374</a>
-  </div>
-</header>
 
-<h2>Summary</h2>
-<p>Third-year AI/ML engineering student who builds ML systems end to end: from training and evaluation to monitoring, drift detection, retraining and deployment. Three working projects, each with automated tests and CI (132 tests in total). Looking for ML engineer, MLOps and AI/NLP internships.</p>
+<h1>Sudeep Nayak</h1>
+<p class="headline">Machine Learning Engineer | MLOps | NLP</p>
+<p class="contact">Email: <a href="mailto:sudeepnayak1104@gmail.com">sudeepnayak1104@gmail.com</a> | Location: Karnataka, India | Portfolio: <a href="https://sudeepn1104.github.io">sudeepn1104.github.io</a></p>
+<p class="contact">LinkedIn: <a href="https://www.linkedin.com/in/sudeep-u-nayak-b69313374/">linkedin.com/in/sudeep-u-nayak-b69313374</a> | GitHub: <a href="https://github.com/Sudeepn1104">github.com/Sudeepn1104</a></p>
 
-<h2>Education</h2>
-<div class="row">
-  <div><b>B.E. in Artificial Intelligence and Machine Learning</b><br>Mangalore Institute of Technology and Engineering (MITE), Moodbidri</div>
-  <div class="meta">Currently in 5th semester</div>
-</div>
+<h2>SUMMARY</h2>
+<p>Third-year Artificial Intelligence and Machine Learning engineering student who builds machine learning systems end to end: data preparation, model training and evaluation, model monitoring, data drift detection, retraining, REST APIs and deployment with Docker and CI/CD. Seeking Machine Learning Engineer, MLOps Engineer and AI/NLP Engineer internships.</p>
 
-<h2>Projects</h2>
-<div class="item">
-  <div class="row"><h3>MLOps Observatory <span>· Model monitoring and retraining</span></h3><span class="meta">github.com/Sudeepn1104/MLOPs-Observatory</span></div>
-  <ul>
-    <li>Built a monitoring dashboard for a credit-default model trained on 30,000 real credit card clients; it detects data drift and performance drops, retrains the model, and promotes v2 only if it beats v1 on the same holdout.</li>
-    <li>Implemented PSI and Kolmogorov–Smirnov drift tests from scratch; retrain rule fires on max PSI &gt; 0.2 or an AUC drop &gt; 0.05.</li>
-    <li>Showed a “silent failure” under concept drift: PSI stayed green while AUC fell from 0.81 to 0.43, so the alarm uses both data and performance signals.</li>
-    <li>Served the model through a FastAPI scoring API in a hardened Docker image with GitHub Actions CI and Render deployment; 63 automated tests. Live Streamlit demo.</li>
-  </ul>
-  <div class="stack"><b>Stack:</b> Python, pandas, scikit-learn, SciPy, Streamlit, Plotly, FastAPI, Docker, GitHub Actions</div>
-</div>
-<div class="item">
-  <div class="row"><h3>AdharaAI <span>· Indian legal document simplifier</span></h3><span class="meta">github.com/Sudeepn1104/AdharaAI</span></div>
-  <ul>
-    <li>Built a tool that reads rental agreements, court notices and contracts (PDF, scanned images via Tesseract OCR, text), flags risky clauses under Indian law and rewrites legal jargon in plain English.</li>
-    <li>Wrote 30+ risk-detection rules and 80+ plain-English rewrite rules, plus a 4-strategy clause segmenter for numbered, lettered, WHEREAS and paragraph-style documents.</li>
-    <li>Fine-tuned an InLegalBERT clause classifier and exported it to ONNX so production runs without PyTorch.</li>
-    <li>Hardened FastAPI backend (rate limiting, magic-byte file validation, security headers); privacy-first, with raw text deleted within 5 minutes. CI runs data-quality checks, 45 tests and a Docker build.</li>
-  </ul>
-  <div class="stack"><b>Stack:</b> Python, Hugging Face Transformers, PyTorch, ONNX Runtime, FastAPI, Tesseract OCR, Docker</div>
-</div>
-<div class="item">
-  <div class="row"><h3>JalSetu Lite <span>· Hackathon team project · my role: backend</span></h3><span class="meta">github.com/Sudeepn1104/jalsetu-lite</span></div>
-  <ul>
-    <li>Built at the Build for Billions hackathon, NITK Surathkal: an open, Beckn-inspired digital public infrastructure network connecting citizens, the BWSSB water board and private water tanker operators. I built the backend.</li>
-    <li>Implemented the order state machine with race-safe cancellation, distance-ranked offers and price benchmarking against official BWSSB rates.</li>
-    <li>Built delivery verification with a server-side HMAC OTP and a 95% meter-volume check; three bad OTPs or a short delivery lock the order as disputed.</li>
-    <li>The project runs 24 automated backend and frontend tests in CI.</li>
-  </ul>
-  <div class="stack"><b>Stack:</b> Python, FastAPI, SQLite, Docker</div>
-</div>
+<h2>EDUCATION</h2>
+<h3>Bachelor of Engineering (B.E.) in Artificial Intelligence and Machine Learning</h3>
+<p class="sub">Mangalore Institute of Technology and Engineering (MITE), Moodbidri, Karnataka | Currently in 5th semester</p>
 
-<h2>Skills</h2>
-<div class="skills">
-  <b>Languages</b><span>Python, JavaScript, TypeScript, Java, HTML/CSS</span>
-  <b>ML &amp; NLP</b><span>scikit-learn, PyTorch, Hugging Face Transformers, InLegalBERT, ONNX Runtime, pandas, SciPy</span>
-  <b>MLOps</b><span>Drift detection (PSI, KS), model registry and retraining, Docker, GitHub Actions, Render, pytest</span>
-  <b>Apps &amp; APIs</b><span>FastAPI, Streamlit, Plotly, SQLite, Tesseract OCR, Git and GitHub</span>
-</div>
+<h2>TECHNICAL SKILLS</h2>
+<p><b>Programming Languages:</b> Python, JavaScript, TypeScript, Java, SQL, HTML, CSS</p>
+<p><b>Machine Learning and NLP:</b> scikit-learn, PyTorch, Hugging Face Transformers, InLegalBERT, ONNX Runtime, pandas, NumPy, SciPy, Random Forest, model evaluation (AUC, F1, accuracy), text classification</p>
+<p><b>MLOps:</b> model monitoring, data drift detection (PSI, Kolmogorov-Smirnov test), concept drift, model registry, automated retraining, Docker, GitHub Actions (CI/CD), Render, pytest</p>
+<p><b>Web, APIs and Data:</b> FastAPI, REST APIs, Streamlit, Plotly, SQLite, Tesseract OCR, Git, GitHub</p>
+
+<h2>PROJECTS</h2>
+
+<h3>MLOps Observatory - Model Monitoring and Retraining Dashboard</h3>
+<p class="sub">Python, scikit-learn, SciPy, Streamlit, FastAPI, Docker, GitHub Actions | github.com/Sudeepn1104/MLOPs-Observatory</p>
+<ul>
+  <li>Built a monitoring dashboard for a Random Forest credit default prediction model trained on 30,000 real credit card clients that detects data drift and performance drops, retrains the model and promotes version 2 only if it beats version 1 on the same holdout set.</li>
+  <li>Implemented Population Stability Index (PSI) and Kolmogorov-Smirnov drift tests from scratch; the retraining rule triggers when maximum PSI exceeds 0.2 or AUC drops by more than 0.05.</li>
+  <li>Identified a silent failure under concept drift where PSI stayed stable while AUC fell from 0.81 to 0.43, and designed the alert to combine data drift and model performance signals.</li>
+  <li>Deployed a FastAPI model-serving API in a hardened Docker image with GitHub Actions CI/CD and Render deployment, covered by 63 automated tests; live demo on Streamlit Community Cloud.</li>
+</ul>
+
+<h3>AdharaAI - Indian Legal Document Simplifier (NLP)</h3>
+<p class="sub">Python, Hugging Face Transformers, PyTorch, InLegalBERT, ONNX Runtime, FastAPI, Tesseract OCR, Docker | github.com/Sudeepn1104/AdharaAI</p>
+<ul>
+  <li>Built an NLP application that reads rental agreements, court notices and employment contracts (PDF, scanned images via OCR, plain text), flags risky clauses under Indian law and rewrites legal jargon in plain English.</li>
+  <li>Fine-tuned an InLegalBERT clause classifier and exported it to ONNX so the production service runs without PyTorch.</li>
+  <li>Wrote more than 30 risk-detection rules, more than 80 plain-English rewrite rules and a 4-strategy clause segmenter for numbered, lettered, WHEREAS and paragraph-style documents.</li>
+  <li>Built a secure FastAPI backend with rate limiting, file validation by magic bytes and security headers; raw document text is deleted within 5 minutes. CI runs data-quality checks, 45 automated tests and a Docker build.</li>
+</ul>
+
+<h3>JalSetu Lite - Water Tanker Logistics Platform (Hackathon Team Project, Backend Developer)</h3>
+<p class="sub">Python, FastAPI, SQLite, Docker | Build for Billions Hackathon, NITK Surathkal | github.com/Sudeepn1104/jalsetu-lite</p>
+<ul>
+  <li>Developed the backend for an open, Beckn-inspired digital public infrastructure platform connecting citizens, the BWSSB municipal water board and private water tanker operators.</li>
+  <li>Implemented the order lifecycle state machine with race-safe cancellation, distance-ranked offers and price benchmarking against official BWSSB rates.</li>
+  <li>Built delivery verification using a server-side HMAC one-time password (OTP) and a 95% meter-volume check; three incorrect OTPs or a short delivery automatically mark the order as disputed.</li>
+</ul>
+
 </body>
 </html>
