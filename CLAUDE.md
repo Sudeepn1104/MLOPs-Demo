@@ -15,7 +15,7 @@ RFID is not used even though the card says "RFID CARD". All demo data is fiction
 
 ### Core principle
 OCR only *proposes* an ID. SQLite is authoritative and the lookup is exact (case-insensitive).
-Look-alike correction (A/4, I/1, O/0, S/5, B/8, Z/2, M/N, plus one stray inserted char) is used only to reach an ID that already exists, and only when exactly one stored ID is reachable.
+Look-alike correction (A/4, I/1, O/0, S/5, B/8, Z/2, M/N, plus one stray inserted char or one missing char) is used only to reach an ID that already exists, and only when exactly one stored ID is reachable. If nothing matches, `/ | \ ! l` between ID characters are read as `I` and the text is tried again (OCR often turns the thin I into one of these, which splits the ID). Any corrected match is not "exact", so auto-scan needs two reads in a row.
 
 ### Pipeline
 1. **Locate card** (`locate_card`): SIFT features of the fixed printed graphics (header, logo, bus picture) are matched against the frame (CLAHE, FLANN, ratio 0.8). SIFT is scale-invariant, so there is one template and no template scales. Per-student areas are masked out (`template_mask`: `BLANK_BOXES` widened by `TEMPLATE_MASK_MARGIN=12` px so the artificial edges of the blanked areas give no features). A MAGSAC homography (at least `MIN_INLIERS=12`) flattens the card to 1000x630. `plausible_card` rejects fits that are non-convex, mirrored, the wrong aspect, or too skewed. Frames are shrunk to `MAX_DETECT_SIDE=1280` for the search; `deep=True` also searches bigger frames at full size for far cards. Fallback: contour/quad detection (`find_card_quads`, aspect 1.2–2.3, area 8–65% of the frame) plus a 180° retry.
