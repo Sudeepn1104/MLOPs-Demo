@@ -10,7 +10,7 @@ RFID is not used even though the card says "RFID CARD". All demo data is fiction
 - `app.py`: the whole app (DB, card location, OCR, rules, auto-scanner, GUI, settings).
 - `check_db.py`: helper that lists students/attendance/scan counts and inserts the fictional test record `4MT24AI054` (MITE-BUS-01, valid to 2027-06-30).
 - `requirements.txt`: opencv-python, numpy, pillow, pytesseract, rapidocr-onnxruntime (optional).
-- `pass_template.png`: **required at runtime but not in the repo.** It's a clean image of the pass (1000x630) that's used for ORB template matching.
+- `pass_template.png`: clean 1000x630 image of the pass with the per-student areas blanked. Required at runtime for ORB template matching.
 - `smartbus_ocr_demo.db`, daily backups `smartbus_ocr_demo.backup-YYYYMMDD-HHMMSS.db`, `scan_debug/`: created at runtime. They hold real pass text and images, so never commit or share them (they're gitignored).
 
 ### Core principle
