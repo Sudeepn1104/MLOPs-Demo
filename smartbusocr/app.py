@@ -53,6 +53,12 @@ STACK_PX = 400    # card narrower than this (px): aligned frames are averaged, w
 NEAR_PX = 290     # card at least this wide (px): a single frame is tried first
 MIN_PX = 200      # narrower than this: too far to read, ask the student to move closer
 STACK_SIZE = 10   # small cards: average up to this many aligned frames
+HEADER_BOX = (0.22, 0.03, 0.99, 0.15)  # printed college name: the same on every pass, so its sharpness measures blur
+START_SHARP_REF = 0.25  # sharpness assumed for a good frame until the first pass is read (it then adapts)
+BLUR_RATIO = 0.5       # a frame under this fraction of the sharpest recent frame's sharpness is smeared: it is not read
+GLARE_FRACTION = 0.01  # share of washed-out pixels in the details area that counts as glare
+RECENT_SIZE = 4        # near cards: recent sharp frames kept, to combine when glare hides the text
+SOFT_FAIL_SECONDS = 4.0  # blur or glare for this long without a read: ask the student to scan again
 STACK_READ_AT = (3, 6, 8)  # while the stack is still filling, read only at these sizes (an early read is often enough)
 MAX_DETECT_SIDE = 1280  # frames larger than this are shrunk for locating the card only (deep search uses 2x)
 PassRead = namedtuple("PassRead", "text cand known exact flat quads lines shape card_px",
@@ -301,12 +307,43 @@ def _load_templates():
             mask = template_mask(h, w)
             kp, des = cv2.SIFT_create(nfeatures=1500).detectAndCompute(_CLAHE.apply(gray), mask)
             _TEMPLATES = ((h, w), (np.float32([k.pt for k in kp]), des)) if des is not None and len(kp) >= 30 else False
+            _HEADER_REF.clear()
+            _HEADER_REF["gray"] = gray
             _ECC_REF = (cv2.resize(gray, (w // 4, h // 4), interpolation=cv2.INTER_AREA).astype(np.float32),
                         cv2.resize(mask, (w // 4, h // 4), interpolation=cv2.INTER_NEAREST))
     return _TEMPLATES or None
 
 
 _ECC_REF = None
+_HEADER_REF = {}  # template header detail at each card size (see frame_sharpness)
+
+
+def _detail(gray):
+    return float(cv2.Laplacian(cv2.GaussianBlur(gray, (0, 0), 1.0), cv2.CV_32F).var())
+
+
+def frame_sharpness(flat, card_px):
+    """Detail in the flattened card's printed header, relative to the template seen at the same size.
+    A sharp frame gives roughly 0.3-0.5 and a motion-blurred one under 0.2; only compare values of similar frames.
+    Returns None without a template."""
+    tpl = _HEADER_REF.get("gray")
+    if tpl is None:
+        return None
+    key = int(min(max(card_px, 100.0), tpl.shape[1]) // 50)
+    if key not in _HEADER_REF:
+        sc = (key * 50 + 25) / tpl.shape[1]
+        small = cv2.resize(tpl, None, fx=min(sc, 1.0), fy=min(sc, 1.0), interpolation=cv2.INTER_AREA)
+        back = cv2.resize(small, (tpl.shape[1], tpl.shape[0]), interpolation=cv2.INTER_CUBIC)
+        _HEADER_REF[key] = max(_detail(crop_box(back, HEADER_BOX)), 1e-6)
+    return _detail(crop_box(cv2.cvtColor(flat, cv2.COLOR_BGR2GRAY), HEADER_BOX)) / _HEADER_REF[key]
+
+
+def glare_fraction(flat):
+    """Share of the details area that is washed out (glare from a lamp or the sun): pixels well above
+    the card's own background brightness, which is taken as the median of the area."""
+    g = cv2.cvtColor(crop_box(flat, FIELDS_BOX), cv2.COLOR_BGR2GRAY)
+    base = float(np.median(g))
+    return float((g >= base + max(15.0, 0.4 * (255.0 - base))).mean())
 
 
 def refine_flat(flat):
@@ -772,9 +809,10 @@ class AutoScanner:
             pass
 
     @staticmethod
-    def stacked(stack):
+    def stacked(stack, dark=False):
         """Align the sharpest recent frames to the best one (sub-pixel shift) and average them:
-        cuts noise and adds detail on small print."""
+        cuts noise and adds detail on small print. dark=True averages only the darker half of the values at each
+        point of the details area: glare is bright and moves between frames, so this removes it."""
         best_i = max(range(len(stack)), key=lambda i: stack[i][1])
         ref = stack[best_i][0]
         gray = lambda im: cv2.cvtColor(crop_box(im, FIELDS_BOX), cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -782,7 +820,7 @@ class AutoScanner:
         window = cv2.createHanningWindow((ref_g.shape[1], ref_g.shape[0]), cv2.CV_32F)
         acc = [ref.astype(np.float32)]
         h, w = ref.shape[:2]
-        for i, (f, sc) in enumerate(stack):
+        for i, (f, sc, *_rest) in enumerate(stack):
             if i == best_i or sc < 0.6 * stack[best_i][1]:
                 continue
             (dx, dy), resp = cv2.phaseCorrelate(ref_g, gray(f), window)
@@ -790,13 +828,20 @@ class AutoScanner:
                 continue  # not the same view of the card: leave it out
             m = np.float32([[1, 0, -dx], [0, 1, -dy]])
             acc.append(cv2.warpAffine(f, m, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE).astype(np.float32))
-        return np.mean(acc, axis=0).astype(np.uint8), len(acc)
+        out = np.mean(acc, axis=0)
+        if dark and len(acc) >= 2:
+            x0, y0, x1, y1 = FIELDS_BOX
+            box = (slice(int(y0 * h), int(y1 * h)), slice(int(x0 * w), int(x1 * w)))
+            part = np.sort(np.stack([a[box] for a in acc]), axis=0)[:(len(acc) + 1) // 2]
+            out[box] = part.mean(axis=0)
+        return out.astype(np.uint8), len(acc)
 
     def run(self, keep_going):
         last_id, streak, fails = None, 0, 0
         locked, last_seen = None, 0.0
         prev_small, hot_until, last_probe, last_deep, last_fb = None, 0.0, 0.0, 0.0, 0.0
         stack, deep_first = [], False
+        recent, best_q, sharp_ref, soft_since = [], 0.0, START_SHARP_REF, None  # sharp_ref: sharpness of frames that read well
         engine = engine_name()
         while keep_going():
             frame = self.get_frame()
@@ -819,28 +864,44 @@ class AutoScanner:
                 last_deep = now_t
             try:
                 loc = locate_card(frame, deep=deep, deep_first=deep_first, refine=True)
-                r, card_px, filling = None, 0.0, False
+                r, card_px, filling, soft, q = None, 0.0, False, None, None
                 if loc is not None:
                     deep_first = loc.deep
                     card_px = loc.card_px
                     hot_until = max(hot_until, now_t + 3.0)
                     if card_px < MIN_PX:
                         r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
-                    elif card_px < STACK_PX:  # small: stack aligned frames and read their average
-                        sharp = float(cv2.Laplacian(cv2.cvtColor(crop_box(loc.flat, STRIP_BOX), cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
-                        stack = (stack + [(loc.flat, sharp)])[-STACK_SIZE:]
-                        n = len(stack)
-                        filling = n < STACK_SIZE  # a failed read is not final until the stack is full
-                        if n == 1 and card_px >= NEAR_PX:
-                            r = read_flat(loc.flat, 0, card_px)  # middle distance: one frame is often enough
-                        elif n >= STACK_SIZE or n in STACK_READ_AT or (n >= 3 and last_id):
-                            avg, _n = self.stacked(stack)
-                            r = read_flat(avg, 0, card_px, boost=True)
-                        else:
-                            r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
                     else:
-                        stack = []
-                        r = read_flat(loc.flat, 0, card_px)
+                        q = frame_sharpness(loc.flat, card_px)
+                        if q is not None:
+                            best_q = max(best_q, q)
+                        glare = glare_fraction(loc.flat) > GLARE_FRACTION
+                        waiting = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
+                        sharp = float(cv2.Laplacian(cv2.cvtColor(crop_box(loc.flat, STRIP_BOX), cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+                        if q is not None and q < BLUR_RATIO * max(best_q, sharp_ref):
+                            r, soft = waiting, "steady"  # smeared by movement: wait for a sharper frame
+                        elif card_px < STACK_PX:  # small: stack aligned frames and read their average
+                            stack = (stack + [(loc.flat, sharp, glare)])[-STACK_SIZE:]
+                            n = len(stack)
+                            filling = n < STACK_SIZE  # a failed read is not final until the stack is full
+                            if n == 1 and card_px >= NEAR_PX:
+                                r = read_flat(loc.flat, 0, card_px)  # middle distance: one frame is often enough
+                            elif n >= STACK_SIZE or n in STACK_READ_AT or last_id:  # last_id: confirm a first read at once
+                                avg, _n = self.stacked(stack, dark=any(e[2] for e in stack))
+                                r = read_flat(avg, 0, card_px, boost=True)
+                            else:
+                                r = waiting
+                        else:  # near: one frame is enough unless glare hides the text
+                            stack = []
+                            recent = (recent + [(loc.flat, sharp)])[-RECENT_SIZE:]
+                            r = read_flat(loc.flat, 0, card_px)
+                            if not r.known and glare and len(recent) >= 2:
+                                combined, _n = self.stacked(recent, dark=True)
+                                r2 = read_flat(combined, 0, card_px)
+                                if r2.known:
+                                    r = r2
+                        if glare and not r.known and not filling:
+                            soft = soft or "glare"
                 elif hot and now_t - last_fb > 1.0:  # logo hidden or blurred: try plain outline detection
                     last_fb, stack = now_t, []
                     quads = find_card_quads(frame)
@@ -870,6 +931,7 @@ class AutoScanner:
             else:  # a small card is missed in some frames: keep its stack until the card is really gone
                 if now_t - last_seen > CARD_GONE_SECONDS:
                     locked, last_id, streak, fails, deep_first, stack = None, None, 0, 0, False, []
+                    recent, best_q, soft_since = [], 0.0, None
                 self.events.put(("idle",))
             dist = "" if not present or not card_px else (
                 " (too far)" if card_px < MIN_PX else " (far: hold steady, %d frames)" % len(stack) if card_px < STACK_PX and stack else "")
@@ -883,12 +945,22 @@ class AutoScanner:
                 self.events.put(("hint", "far"))
                 time.sleep(0.1)
                 continue
-            if filling and not r.known:  # more frames are coming: no failure yet
+            if soft and not r.known:  # blur or glare is not a failed scan, unless it goes on too long
+                soft_since = soft_since or now_t
+                if now_t - soft_since < SOFT_FAIL_SECONDS:
+                    self.events.put(("hint", soft))
+                    continue
+                fails, soft_since, best_q, sharp_ref = 99, None, 0.0, 0.7 * sharp_ref
+            elif filling and not r.known:  # more frames are coming: no failure yet
                 self.events.put(("hint", "steady"))
                 continue
+            else:
+                soft_since = None
             failed = not r.known
             if r.known:
                 fails = 0
+                if q is not None:
+                    sharp_ref = 0.7 * sharp_ref + 0.3 * q
                 if r.cand == locked:  # same card still held after it was handled
                     time.sleep(0.1)
                     continue
@@ -901,7 +973,7 @@ class AutoScanner:
                         bus, session = self.get_context()
                         outcome, status = auto_process(r.cand, r.text, bus, session, details)
                         self.events.put(("result", outcome, status, r.text))
-                        locked, last_id, streak, stack = r.cand, None, 0, []
+                        locked, last_id, streak, stack, recent = r.cand, None, 0, [], []
                     else:
                         failed = True
             if failed:
@@ -911,7 +983,7 @@ class AutoScanner:
                     log_scan(r.cand, r.text, "UNREADABLE")
                     self.save_debug(frame, r)
                     self.events.put(("retry", r.cand, r.text, "far" if card_px < NEAR_PX else None))
-                    fails, stack = 0, []
+                    fails, stack, recent = 0, [], []
             time.sleep(0.01)
 
 
@@ -1121,6 +1193,8 @@ class OCRPrototype:
             if not holding:
                 if ev[1] == "far":
                     self.set_banner("MOVE THE PASS CLOSER", "#d98200")
+                elif ev[1] == "glare":
+                    self.set_banner("GLARE ON THE PASS — TILT IT SLIGHTLY", "#d98200")
                 else:
                     self.set_banner("Reading pass… hold it steady", "#1f5fa8")
         elif kind == "retry":
