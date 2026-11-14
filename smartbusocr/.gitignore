@@ -1,0 +1,4 @@
+# Contain real pass text/images: never commit
+*.db
+scan_debug/
+.venv/
