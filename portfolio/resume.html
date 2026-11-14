@@ -7,18 +7,19 @@
 <!-- ATS-friendly: one column, standard fonts (no web fonts), real text,
      standard section headings, no tables/columns/icons, reading order = visual order. -->
 <style>
-  @page { size: A4; margin: 11mm 14mm; }
-  body { margin: 0; font: 9.6pt/1.3 Arial, "Liberation Sans", Helvetica, sans-serif; color: #000; }
+  @page { size: A4; margin: 9mm 12mm; }
+  body { margin: 0; font: 11.1pt/1.24 Arial, "Liberation Sans", Helvetica, sans-serif; color: #000; }
   a { color: #000; text-decoration: none; }
-  h1 { font-size: 20pt; margin: 0 0 2px; }
-  .headline { font-size: 10.5pt; font-weight: bold; color: #1f3a93; margin: 0 0 3px; }
-  .contact { font-size: 9.5pt; margin: 0; }
-  h2 { font-size: 10.5pt; font-weight: bold; color: #1f3a93; margin: 8px 0 3px; padding-bottom: 1px; border-bottom: 1px solid #1f3a93; }
-  h3 { font-size: 9.9pt; font-weight: bold; margin: 5px 0 0; }
+  h1 { font-size: 21.5pt; margin: 0 0 2px; }
+  .headline { font-size: 12pt; font-weight: bold; color: #1f3a93; margin: 0 0 3px; }
+  .contact { font-size: 11pt; margin: 0; }
+  h2 { font-size: 12pt; font-weight: bold; color: #1f3a93; margin: 8px 0 3px; padding-bottom: 1px; border-bottom: 1px solid #1f3a93; }
+  h3 { font-size: 11.4pt; font-weight: bold; margin: 5px 0 0; }
   p { margin: 0 0 3px; }
-  .sub { font-size: 9pt; margin: 0 0 1px; }
+  .sub { font-size: 10.5pt; margin: 0 0 1px; }
   ul { margin: 2px 0 0; padding-left: 16px; }
   li { margin-bottom: 1px; }
+  .url { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -29,7 +30,7 @@
 <p class="contact">LinkedIn: <a href="https://www.linkedin.com/in/sudeep-u-nayak-b69313374/">linkedin.com/in/sudeep-u-nayak-b69313374</a> | GitHub: <a href="https://github.com/Sudeepn1104">github.com/Sudeepn1104</a></p>
 
 <h2>SUMMARY</h2>
-<p>Third-year Artificial Intelligence and Machine Learning engineering student who builds machine learning systems end to end: data preparation, model training and evaluation, model monitoring, data drift detection, retraining, REST APIs and deployment with Docker and CI/CD. Seeking Machine Learning Engineer, MLOps Engineer and AI/NLP Engineer internships.</p>
+<p>Third-year AI and Machine Learning engineering student who builds ML systems end to end: model training, monitoring, data drift detection, retraining, REST APIs and deployment with Docker and CI/CD. Seeking Machine Learning Engineer, MLOps and AI/NLP internships.</p>
 
 <h2>EDUCATION</h2>
 <h3>Bachelor of Engineering (B.E.) in Artificial Intelligence and Machine Learning</h3>
@@ -44,29 +45,29 @@
 <h2>PROJECTS</h2>
 
 <h3>MLOps Observatory - Model Monitoring and Retraining Dashboard</h3>
-<p class="sub">Python, scikit-learn, SciPy, Streamlit, FastAPI, Docker, GitHub Actions | github.com/Sudeepn1104/MLOPs-Observatory</p>
+<p class="sub">Python, scikit-learn, SciPy, Streamlit, FastAPI, Docker, GitHub Actions | <span class="url">github.com/Sudeepn1104/MLOPs-Observatory</span></p>
 <ul>
-  <li>Built a monitoring dashboard for a Random Forest credit default prediction model trained on 30,000 real credit card clients that detects data drift and performance drops, retrains the model and promotes version 2 only if it beats version 1 on the same holdout set.</li>
+  <li>Built a dashboard that monitors a Random Forest credit default model trained on 30,000 real clients, detects drift and performance drops, retrains, and promotes v2 only if it beats v1 on the same holdout.</li>
   <li>Implemented Population Stability Index (PSI) and Kolmogorov-Smirnov drift tests from scratch; the retraining rule triggers when maximum PSI exceeds 0.2 or AUC drops by more than 0.05.</li>
   <li>Identified a silent failure under concept drift where PSI stayed stable while AUC fell from 0.81 to 0.43, and designed the alert to combine data drift and model performance signals.</li>
   <li>Deployed a FastAPI model-serving API in a hardened Docker image with GitHub Actions CI/CD and Render deployment, covered by 63 automated tests; live demo on Streamlit Community Cloud.</li>
 </ul>
 
 <h3>AdharaAI - Indian Legal Document Simplifier (NLP)</h3>
-<p class="sub">Python, Hugging Face Transformers, PyTorch, InLegalBERT, ONNX Runtime, FastAPI, Tesseract OCR, Docker | github.com/Sudeepn1104/AdharaAI</p>
+<p class="sub">Python, Hugging Face Transformers, PyTorch, InLegalBERT, ONNX Runtime, FastAPI, Tesseract OCR, Docker | <span class="url">github.com/Sudeepn1104/AdharaAI</span></p>
 <ul>
-  <li>Built an NLP application that reads rental agreements, court notices and employment contracts (PDF, scanned images via OCR, plain text), flags risky clauses under Indian law and rewrites legal jargon in plain English.</li>
+  <li>Built an NLP app that reads rental agreements, court notices and contracts (PDF, OCR scans, text), flags risky clauses under Indian law and rewrites legal jargon in plain English.</li>
   <li>Fine-tuned an InLegalBERT clause classifier and exported it to ONNX so the production service runs without PyTorch.</li>
   <li>Wrote more than 30 risk-detection rules, more than 80 plain-English rewrite rules and a 4-strategy clause segmenter for numbered, lettered, WHEREAS and paragraph-style documents.</li>
   <li>Built a secure FastAPI backend with rate limiting, file validation by magic bytes and security headers; raw document text is deleted within 5 minutes. CI runs data-quality checks, 45 automated tests and a Docker build.</li>
 </ul>
 
 <h3>JalSetu Lite - Water Tanker Logistics Platform (Hackathon Team Project, Backend Developer)</h3>
-<p class="sub">Python, FastAPI, SQLite, Docker | Build for Billions Hackathon, NITK Surathkal | github.com/Sudeepn1104/jalsetu-lite</p>
+<p class="sub">Python, FastAPI, SQLite, Docker | Build for Billions Hackathon, NITK Surathkal | <span class="url">github.com/Sudeepn1104/jalsetu-lite</span></p>
 <ul>
-  <li>Developed the backend for an open, Beckn-inspired digital public infrastructure platform connecting citizens, the BWSSB municipal water board and private water tanker operators.</li>
+  <li>Developed the backend for a Beckn-inspired public platform connecting citizens, the BWSSB water board and private tanker operators.</li>
   <li>Implemented the order lifecycle state machine with race-safe cancellation, distance-ranked offers and price benchmarking against official BWSSB rates.</li>
-  <li>Built delivery verification using a server-side HMAC one-time password (OTP) and a 95% meter-volume check; three incorrect OTPs or a short delivery automatically mark the order as disputed.</li>
+  <li>Built delivery verification with a server-side HMAC one-time password (OTP) and a 95% meter-volume check; 3 wrong OTPs or a short delivery mark the order disputed.</li>
 </ul>
 
 </body>
