@@ -47,11 +47,12 @@ DEST_BOX = (0.44, 0.50, 0.74, 0.60)    # destination line
 TEMPLATE_PATH = Path(__file__).resolve().with_name("pass_template.png")
 BLANK_BOXES = [(0.00, 0.26, 0.20, 0.62), (0.17, 0.17, 0.80, 0.84), (0.84, 0.48, 0.99, 0.73), (0.00, 0.78, 0.30, 1.00)]
 FIELDS_BOX = (0.17, 0.17, 0.82, 0.84)  # name line down to Date of Validity
-TEMPLATE_SCALES = (1.0, 0.6, 0.4, 0.28)  # the card appears ~1000*scale px wide in the camera frame
+TEMPLATE_MASK_MARGIN = 12  # px kept clear around the blanked areas: their artificial edges never appear on a real pass
+MIN_INLIERS = 12  # template features that must agree on the card's position
 NEAR_PX = 290     # card at least this wide (px): one frame is enough to read it
 MIN_PX = 200      # narrower than this: too far to read, ask the student to move closer
 STACK_SIZE = 6    # far cards: average this many aligned frames before reading
-MAX_DETECT_SIDE = 1920  # frames larger than this are shrunk for locating the card only
+MAX_DETECT_SIDE = 1280  # frames larger than this are shrunk for locating the card only (deep search uses 2x)
 PassRead = namedtuple("PassRead", "text cand known exact flat quads lines shape card_px",
                       defaults=(None, 0, None, None, 0.0))
 Located = namedtuple("Located", "flat card_px inliers deep")
@@ -269,31 +270,36 @@ def find_card_quad(frame):
 _TEMPLATES = None
 
 
+_CLAHE = cv2.createCLAHE(2.0, (8, 8))
+
+
+def template_mask(h, w, margin=TEMPLATE_MASK_MARGIN):
+    """255 where the pass looks the same on every card (header, logo, bus picture), 0 elsewhere.
+    The blanked per-student areas are widened by margin so features on their artificial edges are left out."""
+    mask = np.full((h, w), 255, np.uint8)
+    for x0, y0, x1, y1 in BLANK_BOXES:
+        mask[max(0, int(y0 * h) - margin):int(y1 * h) + margin, max(0, int(x0 * w) - margin):int(x1 * w) + margin] = 0
+    mask[:, :int(0.04 * w) + margin] = 0  # dark photo border on the left
+    mask[:int(0.015 * h) + margin, :] = 0
+    mask[:, w - margin:] = 0  # the outer edge meets a different background in every frame
+    mask[h - margin:, :] = 0
+    return mask
+
+
 def _load_templates():
-    """ORB features of the fixed printed graphics (header, logo, bus picture) at several sizes."""
-    global _TEMPLATES
+    """SIFT features of the fixed printed graphics. SIFT is scale-invariant, so one template covers near and far cards."""
+    global _TEMPLATES, _ECC_REF
     if _TEMPLATES is None:
         img = cv2.imread(str(TEMPLATE_PATH)) if TEMPLATE_PATH.exists() else None
         if img is None:
             _TEMPLATES = False
         else:
             h, w = img.shape[:2]
-            mask = np.full((h, w), 255, np.uint8)
-            for x0, y0, x1, y1 in BLANK_BOXES:
-                mask[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)] = 0
-            mask[:, :int(0.04 * w)] = 0
-            mask[:int(0.015 * h), :] = 0
-            levels = []
-            for sc in TEMPLATE_SCALES:
-                im = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
-                mk = cv2.resize(mask, (im.shape[1], im.shape[0]), interpolation=cv2.INTER_NEAREST)
-                kp, des = cv2.ORB_create(nfeatures=1000, scaleFactor=1.2, nlevels=6, edgeThreshold=12,
-                                         patchSize=21).detectAndCompute(cv2.cvtColor(im, cv2.COLOR_BGR2GRAY), mk)
-                if des is not None and len(kp) >= 10:
-                    levels.append((sc, kp, des))
-            _TEMPLATES = ((h, w), levels) if levels else False
-            global _ECC_REF
-            _ECC_REF = (cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (w // 4, h // 4), interpolation=cv2.INTER_AREA).astype(np.float32),
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            mask = template_mask(h, w)
+            kp, des = cv2.SIFT_create(nfeatures=1500).detectAndCompute(_CLAHE.apply(gray), mask)
+            _TEMPLATES = ((h, w), (np.float32([k.pt for k in kp]), des)) if des is not None and len(kp) >= 30 else False
+            _ECC_REF = (cv2.resize(gray, (w // 4, h // 4), interpolation=cv2.INTER_AREA).astype(np.float32),
                         cv2.resize(mask, (w // 4, h // 4), interpolation=cv2.INTER_NEAREST))
     return _TEMPLATES or None
 
@@ -322,61 +328,68 @@ def refine_flat(flat):
     return cv2.warpPerspective(flat, full, (w, h), flags=cv2.INTER_CUBIC + cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REPLICATE)
 
 
-def _match_templates(frame, det, levels):
-    """Best (inliers, template scale, homography) with the frame resized by det, or None."""
+def _match_templates(frame, det, tpl):
+    """Best (inliers, homography template -> frame resized by det) from SIFT matches, or None."""
     small = cv2.resize(frame, None, fx=det, fy=det,
                        interpolation=cv2.INTER_AREA if det < 1.0 else cv2.INTER_CUBIC) if abs(det - 1.0) > 1e-3 else frame
-    gray = cv2.createCLAHE(2.0, (8, 8)).apply(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY))
-    kp, des = cv2.ORB_create(nfeatures=3000, scaleFactor=1.2, nlevels=8, edgeThreshold=12,
-                             patchSize=21).detectAndCompute(gray, None)
-    if des is None or len(kp) < 12:
+    gray = _CLAHE.apply(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY))
+    kp, des = cv2.SIFT_create(nfeatures=4000).detectAndCompute(gray, None)
+    tpts, tdes = tpl
+    if des is None or len(kp) < MIN_INLIERS:
         return None
-    matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
-    best = None
-    for sc, tkp, tdes in levels:
-        pairs = [p for p in matcher.knnMatch(tdes, des, k=2) if len(p) == 2]
-        good = [m for m, n in pairs if m.distance < 0.8 * n.distance]
-        if len(good) < 10:
-            continue
-        src = np.float32([tkp[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-        dst = np.float32([kp[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-        hom, inl = cv2.findHomography(src, dst, cv2.RANSAC, 4.0)
-        if hom is None:
-            continue
-        n = int(inl.sum())
-        if best is None or n > best[0]:
-            best = (n, sc, hom)
-    return best if best and best[0] >= 14 else None
+    pairs = cv2.FlannBasedMatcher(dict(algorithm=1, trees=4), dict(checks=48)).knnMatch(tdes, des, k=2)
+    good = [m for m, n in (p for p in pairs if len(p) == 2) if m.distance < 0.8 * n.distance]
+    if len(good) < MIN_INLIERS:
+        return None
+    src = tpts[[m.queryIdx for m in good]].reshape(-1, 1, 2)
+    dst = np.float32([kp[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    method = getattr(cv2, "USAC_MAGSAC", cv2.RANSAC)  # MAGSAC++ (OpenCV 4.5+): steadier fit than plain RANSAC
+    hom, inl = cv2.findHomography(src, dst, method, 4.0, maxIters=4000, confidence=0.999)
+    if hom is None or int(inl.sum()) < MIN_INLIERS:
+        return None
+    return int(inl.sum()), hom
+
+
+def plausible_card(corners):
+    """Corners (top-left, top-right, bottom-right, bottom-left) look like a real, upright, unmirrored pass."""
+    c = corners.reshape(4, 2)
+    if not cv2.isContourConvex(c.astype(np.float32).reshape(-1, 1, 2)):
+        return False
+    top, bottom = np.linalg.norm(c[1] - c[0]), np.linalg.norm(c[2] - c[3])
+    left, right = np.linalg.norm(c[3] - c[0]), np.linalg.norm(c[2] - c[1])
+    if min(top, bottom, left, right) < 20 or not 1.1 <= max(top, bottom) / max(left, right, 1.0) <= 2.4:
+        return False
+    if max(top, bottom) > 1.8 * min(top, bottom) or max(left, right) > 1.8 * min(left, right):
+        return False  # more perspective than a hand-held card can show: a bad fit
+    v1, v2 = c[1] - c[0], c[3] - c[0]
+    return v1[0] * v2[1] - v1[1] * v2[0] > 0  # negative = mirror image, which a real card never gives
 
 
 def locate_card(frame, deep=False, deep_first=False, refine=False):
     """Find the pass by its printed graphics (any rotation, tilt, distance or background).
-    deep=True also searches an enlarged copy of the frame, which finds a small (far) card.
-    Returns Located(flat 1000x630 upright card, card width in px, inliers) or None."""
+    deep=True also searches large frames at full size, which finds a small (far) card.
+    Returns Located(flat 1000x630 upright card, card width in px, inliers, found by the deep search) or None."""
     t = _load_templates()
     if t is None:
         return None
-    (th, tw), levels = t
+    (th, tw), tpl = t
     fh, fw = frame.shape[:2]
     base = min(1.0, MAX_DETECT_SIDE / float(max(fh, fw)))
     found = None
-    scales = [base] + ([min(2.0, base * 1.8)] if deep else [])
+    # SIFT already searches a 2x enlarged image itself, so a deep pass only helps when the frame was shrunk.
+    scales = [base] + ([min(1.0, base * 2.0)] if deep and base < 0.99 else [])
     if deep_first:
         scales.reverse()
     for det in scales:
-        best = _match_templates(frame, det, levels)
+        best = _match_templates(frame, det, tpl)
         if best is None:
             continue
-        n, sc, hom = best
-        full = hom @ np.diag([sc, sc, 1.0])  # template-size coordinates -> detection-frame coordinates
-        corners = cv2.perspectiveTransform(np.float32([[0, 0], [tw, 0], [tw, th], [0, th]]).reshape(-1, 1, 2), full).reshape(4, 2)
-        if not cv2.isContourConvex(corners.astype(np.float32).reshape(-1, 1, 2)):
+        n, hom = best
+        corners = cv2.perspectiveTransform(np.float32([[0, 0], [tw, 0], [tw, th], [0, th]]).reshape(-1, 1, 2), hom).reshape(4, 2)
+        if not plausible_card(corners):
             continue
         top, bottom = np.linalg.norm(corners[1] - corners[0]), np.linalg.norm(corners[2] - corners[3])
-        left, right = np.linalg.norm(corners[3] - corners[0]), np.linalg.norm(corners[2] - corners[1])
-        if min(top, bottom, left, right) < 20 or not 1.1 <= max(top, bottom) / max(left, right, 1.0) <= 2.4:
-            continue
-        found = (float((top + bottom) / 2) / det, np.diag([1.0 / det, 1.0 / det, 1.0]) @ full, n)
+        found = (float((top + bottom) / 2) / det, np.diag([1.0 / det, 1.0 / det, 1.0]) @ hom, n)
         break
     if found is None:
         return None
