@@ -49,9 +49,11 @@ BLANK_BOXES = [(0.00, 0.26, 0.20, 0.62), (0.17, 0.17, 0.80, 0.84), (0.84, 0.48, 
 FIELDS_BOX = (0.17, 0.17, 0.82, 0.84)  # name line down to Date of Validity
 TEMPLATE_MASK_MARGIN = 12  # px kept clear around the blanked areas: their artificial edges never appear on a real pass
 MIN_INLIERS = 12  # template features that must agree on the card's position
-NEAR_PX = 290     # card at least this wide (px): one frame is enough to read it
+STACK_PX = 400    # card narrower than this (px): aligned frames are averaged, which makes small print readable
+NEAR_PX = 290     # card at least this wide (px): a single frame is tried first
 MIN_PX = 200      # narrower than this: too far to read, ask the student to move closer
-STACK_SIZE = 6    # far cards: average this many aligned frames before reading
+STACK_SIZE = 10   # small cards: average up to this many aligned frames
+STACK_READ_AT = (3, 6, 8)  # while the stack is still filling, read only at these sizes (an early read is often enough)
 MAX_DETECT_SIDE = 1280  # frames larger than this are shrunk for locating the card only (deep search uses 2x)
 PassRead = namedtuple("PassRead", "text cand known exact flat quads lines shape card_px",
                       defaults=(None, 0, None, None, 0.0))
@@ -395,7 +397,7 @@ def locate_card(frame, deep=False, deep_first=False, refine=False):
         return None
     card_px, to_frame, n = found
     flat = cv2.warpPerspective(frame, np.linalg.inv(to_frame), (tw, th), flags=cv2.INTER_CUBIC)
-    if refine and card_px < NEAR_PX:
+    if refine and card_px < STACK_PX:
         flat = refine_flat(flat)
     return Located(flat, card_px, n, det > base * 1.01)
 
@@ -817,26 +819,30 @@ class AutoScanner:
                 last_deep = now_t
             try:
                 loc = locate_card(frame, deep=deep, deep_first=deep_first, refine=True)
-                r, card_px = None, 0.0
+                r, card_px, filling = None, 0.0, False
                 if loc is not None:
                     deep_first = loc.deep
                     card_px = loc.card_px
                     hot_until = max(hot_until, now_t + 3.0)
                     if card_px < MIN_PX:
                         r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
-                    elif card_px < NEAR_PX:  # far: stack aligned frames, then read the average
+                    elif card_px < STACK_PX:  # small: stack aligned frames and read their average
                         sharp = float(cv2.Laplacian(cv2.cvtColor(crop_box(loc.flat, STRIP_BOX), cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
                         stack = (stack + [(loc.flat, sharp)])[-STACK_SIZE:]
-                        if len(stack) < 3:
-                            r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
-                        else:
+                        n = len(stack)
+                        filling = n < STACK_SIZE  # a failed read is not final until the stack is full
+                        if n == 1 and card_px >= NEAR_PX:
+                            r = read_flat(loc.flat, 0, card_px)  # middle distance: one frame is often enough
+                        elif n >= STACK_SIZE or n in STACK_READ_AT or (n >= 3 and last_id):
                             avg, _n = self.stacked(stack)
                             r = read_flat(avg, 0, card_px, boost=True)
+                        else:
+                            r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
                     else:
                         stack = []
                         r = read_flat(loc.flat, 0, card_px)
                 elif hot and now_t - last_fb > 1.0:  # logo hidden or blurred: try plain outline detection
-                    last_fb = now_t
+                    last_fb, stack = now_t, []
                     quads = find_card_quads(frame)
                     for q in quads[:2]:
                         flat = warp_card(frame, q)
@@ -861,13 +867,12 @@ class AutoScanner:
             if present:
                 last_seen = now_t
                 self.events.put(("reading",))
-            else:
-                stack = []
+            else:  # a small card is missed in some frames: keep its stack until the card is really gone
                 if now_t - last_seen > CARD_GONE_SECONDS:
-                    locked, last_id, streak, fails, deep_first = None, None, 0, 0, False
+                    locked, last_id, streak, fails, deep_first, stack = None, None, 0, 0, False, []
                 self.events.put(("idle",))
             dist = "" if not present or not card_px else (
-                " (too far)" if card_px < MIN_PX else " (far: hold steady)" if card_px < NEAR_PX else "")
+                " (too far)" if card_px < MIN_PX else " (far: hold steady, %d frames)" % len(stack) if card_px < STACK_PX and stack else "")
             self.events.put(("status", f"card in view: {'yes, %d px wide%s' % (card_px, dist) if present else 'no'}"
                                        f"   |   engine: {engine}   |   last read: {(r.cand if r else None) or '-'}"
                                        f"   |   {time.time() - t0:.1f} s/frame"))
@@ -878,7 +883,7 @@ class AutoScanner:
                 self.events.put(("hint", "far"))
                 time.sleep(0.1)
                 continue
-            if r.text == "" and r.cand is None and card_px < NEAR_PX and len(stack) < 3:
+            if filling and not r.known:  # more frames are coming: no failure yet
                 self.events.put(("hint", "steady"))
                 continue
             failed = not r.known
