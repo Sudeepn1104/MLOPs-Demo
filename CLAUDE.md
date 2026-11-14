@@ -10,7 +10,7 @@ RFID is not used even though the card says "RFID CARD". All demo data is fiction
 - `app.py`: the whole app (DB, card location, OCR, rules, auto-scanner, GUI, settings).
 - `check_db.py`: helper that lists students/attendance/scan counts and inserts the fictional test record `4MT24AI054` (MITE-BUS-01, valid to 2027-06-30).
 - `requirements.txt`: opencv-python, numpy, pillow, pytesseract, rapidocr-onnxruntime (optional).
-- `pass_template.png`: clean 1000x630 image of the pass with the per-student areas blanked. Required at runtime for ORB template matching.
+- `pass_template.png`: clean 1000x630 image of the pass with the per-student areas blanked. Required at runtime for template matching.
 - `smartbus_ocr_demo.db`, daily backups `smartbus_ocr_demo.backup-YYYYMMDD-HHMMSS.db`, `scan_debug/`: created at runtime. They hold real pass text and images, so never commit or share them (they're gitignored).
 
 ### Core principle
@@ -18,7 +18,7 @@ OCR only *proposes* an ID. SQLite is authoritative and the lookup is exact (case
 Look-alike correction (A/4, I/1, O/0, S/5, B/8, Z/2, M/N, plus one stray inserted char) is used only to reach an ID that already exists, and only when exactly one stored ID is reachable.
 
 ### Pipeline
-1. **Locate card** (`locate_card`): ORB features of the fixed printed graphics (header, logo, bus picture) are matched at template scales (1.0, 0.6, 0.4, 0.28). Per-student areas are masked out (`BLANK_BOXES`). A RANSAC homography (at least 14 inliers) flattens the card to 1000x630. `deep=True` also searches a 1.8x upscaled frame for far cards. Fallback: contour/quad detection (`find_card_quads`, aspect 1.2–2.3, area 8–65% of the frame) plus a 180° retry.
+1. **Locate card** (`locate_card`): SIFT features of the fixed printed graphics (header, logo, bus picture) are matched against the frame (CLAHE, FLANN, ratio 0.8). SIFT is scale-invariant, so there is one template and no template scales. Per-student areas are masked out (`template_mask`: `BLANK_BOXES` widened by `TEMPLATE_MASK_MARGIN=12` px so the artificial edges of the blanked areas give no features). A MAGSAC homography (at least `MIN_INLIERS=12`) flattens the card to 1000x630. `plausible_card` rejects fits that are non-convex, mirrored, the wrong aspect, or too skewed. Frames are shrunk to `MAX_DETECT_SIDE=1280` for the search; `deep=True` also searches bigger frames at full size for far cards. Fallback: contour/quad detection (`find_card_quads`, aspect 1.2–2.3, area 8–65% of the frame) plus a 180° retry.
 2. **Distance**: card width `< MIN_PX=200` means "move closer"; `< NEAR_PX=290` means far, so up to `STACK_SIZE=6` frames are ECC-refined, phase-correlated, averaged, upscaled and sharpened before reading.
 3. **OCR** (`read_flat`): RapidOCR (preferred, in-process, better on small print) reads `FIELDS_BOX`. Otherwise Tesseract `--psm 6` reads `STRIP_BOX` on an upscaled grayscale crop (no thresholding, which hurts this card's small print). Tesseract path: `C:\Program Files\Tesseract-OCR\tesseract.exe` if present, else PATH.
 4. **Candidates** (`analyse_text`): `REG NO` label, then the configured pattern `[prefix]year+branch+suffix`, then generic 5–20 char tokens containing a digit.
