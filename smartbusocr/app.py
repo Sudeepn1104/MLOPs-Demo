@@ -624,13 +624,17 @@ def _swap_hits(candidate, known, max_positions=10):
 
 def resolve_known(candidate, known):
     """Return the single stored ID reachable from candidate, else None.
-    Tries look-alike swaps first, then one stray extra character (OCR insertion)."""
+    Tries look-alike swaps first, then one stray extra character (OCR insertion),
+    then one missing character (OCR dropped a thin letter such as I)."""
     hits = _swap_hits(candidate, known)
     if not hits and len(candidate) > 5:
         lengths = {len(k) for k in known}
         if (len(candidate) - 1) in lengths:
             for i in range(len(candidate)):
                 hits |= _swap_hits(candidate[:i] + candidate[i + 1:], known)
+        if not hits and (len(candidate) + 1) in lengths:
+            hits = {k for k in known if len(k) == len(candidate) + 1
+                    and any(k[:i] + k[i + 1:] == candidate for i in range(len(k)))}
     return next(iter(hits)) if len(hits) == 1 else None
 
 
@@ -648,16 +652,25 @@ def analyse_text(text):
         known = {r[0].upper() for r in con.execute("SELECT usn FROM students")}
         row = con.execute("SELECT setting_value FROM app_settings WHERE setting_key='id_prefixes'").fetchone()
     prefixes = [x.strip().upper() for x in (row[0] if row else "").split(",") if x.strip()]
-    # Generic tokens must contain a digit, so words like MANGALORE are never offered.
-    tokens = [t for t in re.findall(r"(?<![A-Z0-9])[A-Z0-9]{5,20}(?![A-Z0-9])", normalized)
-              if re.search(r"\d", t)]
-    labelled = re.findall(r"REG\W{0,3}NO\W{0,3}([A-Z0-9]{5,20})", normalized)
-    configured = configured_code_candidates(normalized, years, branches, prefixes)
-    candidates = list(dict.fromkeys(labelled + configured + tokens))
+    def candidates_in(norm):
+        # Generic tokens must contain a digit, so words like MANGALORE are never offered.
+        tokens = [t for t in re.findall(r"(?<![A-Z0-9])[A-Z0-9]{5,20}(?![A-Z0-9])", norm) if re.search(r"\d", t)]
+        labelled = re.findall(r"REG\W{0,3}NO\W{0,3}([A-Z0-9]{5,20})", norm)
+        return labelled + configured_code_candidates(norm, years, branches, prefixes) + tokens
+
+    candidates = list(dict.fromkeys(candidates_in(normalized)))
     for c in candidates:
         resolved = resolve_known(c, known)
         if resolved:
             return resolved, True, resolved == c
+    # OCR often reads a thin I inside an ID as / | \ ! or l, which splits the ID in two (4MT24A/054).
+    # Read those as I and try again; such a match is never "exact", so it needs two reads in a row.
+    joined = re.sub(r"(?<=[A-Z0-9])[/|\\!l](?=[A-Z0-9])", "I", text).upper()
+    if joined != normalized:
+        for c in dict.fromkeys(candidates_in(joined)):
+            resolved = resolve_known(c, known)
+            if resolved:
+                return resolved, True, False
     return (candidates[0] if candidates else None), False, False
 
 
