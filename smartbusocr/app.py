@@ -36,7 +36,7 @@ _TESS = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 if _TESS.exists():
     pytesseract.pytesseract.tesseract_cmd = str(_TESS)
 
-AUTO_CONFIRM_READS = 2     # same stored ID must be read this many times in a row before auto-marking
+AUTO_CONFIRM_READS = 2     # small card / combined frames / corrected ID: read this many times in a row, from separate frames
 AUTO_FAIL_LIMIT = 2        # unreadable reads in a row before asking the student to scan again
 CARD_GONE_SECONDS = 1.5    # card must leave the view this long before it can be scanned again
 # Field positions on the standard college bus pass, as fractions of the flattened card.
@@ -54,7 +54,6 @@ NEAR_PX = 290     # card at least this wide (px): a single frame is tried first
 MIN_PX = 200      # narrower than this: too far to read, ask the student to move closer
 STACK_SIZE = 10   # small cards: average up to this many aligned frames
 HEADER_BOX = (0.22, 0.03, 0.99, 0.15)  # printed college name: the same on every pass, so its sharpness measures blur
-START_SHARP_REF = 0.25  # sharpness assumed for a good frame until the first pass is read (it then adapts)
 BLUR_RATIO = 0.5       # a frame under this fraction of the sharpest recent frame's sharpness is smeared: it is not read
 GLARE_FRACTION = 0.01  # share of washed-out pixels in the details area that counts as glare
 RECENT_SIZE = 4        # near cards: recent sharp frames kept, to combine when glare hides the text
@@ -787,6 +786,8 @@ def name_matches(name, text):
 class AutoScanner:
     """Continuous scanner (no Tk). Pushes events: idle, reading, status, hint, result, retry, error, fatal."""
 
+    sharp_ref = 0.0  # learned from successful reads; kept across auto-scan restarts
+
     def __init__(self, get_frame, get_context, events):
         self.get_frame, self.get_context, self.events = get_frame, get_context, events
 
@@ -841,7 +842,8 @@ class AutoScanner:
         locked, last_seen = None, 0.0
         prev_small, hot_until, last_probe, last_deep, last_fb = None, 0.0, 0.0, 0.0, 0.0
         stack, deep_first = [], False
-        recent, best_q, sharp_ref, soft_since = [], 0.0, START_SHARP_REF, None  # sharp_ref: sharpness of frames that read well
+        recent, best_q, soft_since = [], 0.0, None
+        sharp_ref = AutoScanner.sharp_ref  # sharpness of frames that read well on this camera (0 until the first read)
         engine = engine_name()
         while keep_going():
             frame = self.get_frame()
@@ -864,7 +866,7 @@ class AutoScanner:
                 last_deep = now_t
             try:
                 loc = locate_card(frame, deep=deep, deep_first=deep_first, refine=True)
-                r, card_px, filling, soft, q = None, 0.0, False, None, None
+                r, card_px, filling, soft, sharp_q, single = None, 0.0, False, None, None, False
                 if loc is not None:
                     deep_first = loc.deep
                     card_px = loc.card_px
@@ -872,13 +874,13 @@ class AutoScanner:
                     if card_px < MIN_PX:
                         r = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
                     else:
-                        q = frame_sharpness(loc.flat, card_px)
-                        if q is not None:
-                            best_q = max(best_q, q)
+                        sharp_q = frame_sharpness(loc.flat, card_px)
+                        if sharp_q is not None:
+                            best_q = max(best_q, sharp_q)
                         glare = glare_fraction(loc.flat) > GLARE_FRACTION
                         waiting = PassRead("", None, False, False, loc.flat, 0, None, None, card_px)
                         sharp = float(cv2.Laplacian(cv2.cvtColor(crop_box(loc.flat, STRIP_BOX), cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
-                        if q is not None and q < BLUR_RATIO * max(best_q, sharp_ref):
+                        if sharp_q is not None and sharp_q < BLUR_RATIO * max(best_q, sharp_ref):
                             r, soft = waiting, "steady"  # smeared by movement: wait for a sharper frame
                         elif card_px < STACK_PX:  # small: stack aligned frames and read their average
                             stack = (stack + [(loc.flat, sharp, glare)])[-STACK_SIZE:]
@@ -886,7 +888,7 @@ class AutoScanner:
                             filling = n < STACK_SIZE  # a failed read is not final until the stack is full
                             if n == 1 and card_px >= NEAR_PX:
                                 r = read_flat(loc.flat, 0, card_px)  # middle distance: one frame is often enough
-                            elif n >= STACK_SIZE or n in STACK_READ_AT or last_id:  # last_id: confirm a first read at once
+                            elif n >= STACK_SIZE or n in STACK_READ_AT or last_id:  # last_id: a first read is waiting to be confirmed
                                 avg, _n = self.stacked(stack, dark=any(e[2] for e in stack))
                                 r = read_flat(avg, 0, card_px, boost=True)
                             else:
@@ -895,13 +897,16 @@ class AutoScanner:
                             stack = []
                             recent = (recent + [(loc.flat, sharp)])[-RECENT_SIZE:]
                             r = read_flat(loc.flat, 0, card_px)
+                            single = True  # one sharp frame of a near card: the most reliable kind of read
                             if not r.known and glare and len(recent) >= 2:
                                 combined, _n = self.stacked(recent, dark=True)
                                 r2 = read_flat(combined, 0, card_px)
                                 if r2.known:
-                                    r = r2
+                                    r, single = r2, False
                         if glare and not r.known and not filling:
                             soft = soft or "glare"
+                        elif not sharp_ref and not r.known and not filling:
+                            soft = soft or "steady"  # nothing read yet on this camera: blur cannot be judged, so be patient
                 elif hot and now_t - last_fb > 1.0:  # logo hidden or blurred: try plain outline detection
                     last_fb, stack = now_t, []
                     quads = find_card_quads(frame)
@@ -950,24 +955,31 @@ class AutoScanner:
                 if now_t - soft_since < SOFT_FAIL_SECONDS:
                     self.events.put(("hint", soft))
                     continue
-                fails, soft_since, best_q, sharp_ref = 99, None, 0.0, 0.7 * sharp_ref
-            elif filling and not r.known:  # more frames are coming: no failure yet
+                fails, soft_since, best_q = 99, None, 0.0
+                sharp_ref = AutoScanner.sharp_ref = 0.7 * sharp_ref
+            else:
+                soft_since = None  # a usable frame arrived: the blur/glare clock starts again
+            if not soft and filling and not r.known:  # more frames are coming: no failure yet
                 self.events.put(("hint", "steady"))
                 continue
-            else:
-                soft_since = None
             failed = not r.known
             if r.known:
                 fails = 0
-                if q is not None:
-                    sharp_ref = 0.7 * sharp_ref + 0.3 * q
+                if sharp_q is not None:
+                    sharp_ref = AutoScanner.sharp_ref = (0.7 * sharp_ref + 0.3 * sharp_q) if sharp_ref else sharp_q
                 if r.cand == locked:  # same card still held after it was handled
                     time.sleep(0.1)
                     continue
                 streak = streak + 1 if r.cand == last_id else 1
                 last_id = r.cand
-                # An exactly-read stored ID needs one read; a look-alike-corrected one needs two.
-                if streak >= (1 if r.exact else AUTO_CONFIRM_READS):
+                # One exact read of a near card is enough. Anything else (small card, combined frames, corrected ID)
+                # is read twice from separate frames: a misread digit can land on another student's ID,
+                # and reads that share frames repeat the same mistake.
+                if streak < (1 if single and r.exact else AUTO_CONFIRM_READS):
+                    stack, recent = [], []  # the confirming read must not reuse these frames
+                    self.events.put(("hint", "steady"))
+                    continue
+                else:
                     details = read_details(r)
                     if self.name_ok(r.cand, details.get("name", ""), r.text):
                         bus, session = self.get_context()
